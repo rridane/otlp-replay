@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pyarrow as pa
 
-from otlp_replay.domain.hour_window import HourWindow
+from otlp_replay.domain.period import Period
 from otlp_replay.domain.raw_object import RawObject
 from otlp_replay.domain.span import SPAN_SCHEMA
 from otlp_replay.domain.span_extractor import SpanExtractor
@@ -34,13 +34,15 @@ class FakeDecoder:
         )
 
 
-def test_decodes_every_object_and_keeps_the_hour():
-    extractor = SpanExtractor(FakeDecoder(), HourWindow.containing(H9))
+def test_decodes_every_object_and_keeps_the_period():
+    extractor = SpanExtractor(FakeDecoder(), Period(H9, H9 + timedelta(hours=1)))
     spans = extractor.extract([RawObject("a", b"-1,0"), RawObject("b", b"59,60")])
     assert spans["span_id"].to_pylist() == ["a0", "b59"]
 
 
 def test_no_object_gives_an_empty_table_with_the_contract():
-    spans = SpanExtractor(FakeDecoder(), HourWindow.containing(H9)).extract([])
+    spans = SpanExtractor(FakeDecoder(), Period(H9, H9 + timedelta(hours=1))).extract(
+        []
+    )
     assert spans.schema == SPAN_SCHEMA
     assert spans.num_rows == 0

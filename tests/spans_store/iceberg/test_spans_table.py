@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from otlp_factory import payload, span
@@ -8,6 +8,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.types import NestedField, StringType
 
 from otlp_replay.decoding.otlp.decoder import OtlpTraceDecoder
+from otlp_replay.domain.period import Period
 from otlp_replay.spans_store.iceberg.schema import (
     NAMESPACE,
     SPANS_SCHEMA,
@@ -16,7 +17,7 @@ from otlp_replay.spans_store.iceberg.schema import (
 from otlp_replay.spans_store.iceberg.spans_table import (
     SchemaDriftError,
     SpansTable,
-    hour_properties,
+    period_properties,
 )
 
 
@@ -65,14 +66,15 @@ def test_refuses_table_with_other_partitioning(catalog):
         SpansTable(catalog).ensure()
 
 
-def test_finds_the_last_snapshot_of_an_hour(catalog):
+def test_finds_the_last_snapshot_of_a_period(catalog):
     h9 = datetime(2026, 10, 16, 9, tzinfo=UTC)
+    period = Period(h9, h9 + timedelta(hours=1))
     spans = SpansTable(catalog)
     rows = OtlpTraceDecoder().decode(payload(span("0000000000000002", h9)), "a")
     table = spans.create_or_load()
     for _ in range(2):
-        table.append(rows, snapshot_properties=hour_properties(h9))
-    snapshot, current = spans.hour_snapshot(h9), table.refresh().current_snapshot()
+        table.append(rows, snapshot_properties=period_properties(period))
+    snapshot, current = spans.snapshot(period), table.refresh().current_snapshot()
     assert current is not None
     assert snapshot.snapshot_id == current.snapshot_id
     assert snapshot.added_records == 1

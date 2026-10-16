@@ -1,12 +1,12 @@
-"""One MLflow run per extracted hour: metrics and lineage to the written version."""
+"""One MLflow run per extracted period: metrics and lineage to the written version."""
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import datetime
 
 import mlflow
 
 from otlp_replay.domain.extraction_report import ExtractionReport
+from otlp_replay.domain.period import Period
 from otlp_replay.tracking.extraction_tracker import ExtractionTracker
 
 EXPERIMENT = "spans-extraction"
@@ -24,11 +24,17 @@ class MlflowExtractionTracker(ExtractionTracker):
         self._git_commit = git_commit
 
     @contextmanager
-    def track(self, hour: datetime) -> Iterator[Callable[[ExtractionReport], None]]:
+    def track(self, period: Period) -> Iterator[Callable[[ExtractionReport], None]]:
         """Run opened before the extraction: an exception ends it as FAILED."""
         mlflow.set_experiment(self._experiment)
-        with mlflow.start_run(run_name=f"spans {hour:%Y-%m-%dT%H}"):
-            mlflow.log_params({"hour": hour.isoformat(), "store": self._store})
+        with mlflow.start_run(run_name=f"spans {period}"):
+            mlflow.log_params(
+                {
+                    "start": period.start.isoformat(),
+                    "end": period.end.isoformat(),
+                    "store": self._store,
+                }
+            )
             if self._git_commit:
                 mlflow.set_tag("git.commit", self._git_commit)
             yield self._record

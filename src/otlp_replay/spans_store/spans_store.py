@@ -1,8 +1,8 @@
 from abc import abstractmethod
-from datetime import datetime
 from typing import Protocol
 
-from otlp_replay.domain.extraction_report import HourSnapshot
+from otlp_replay.domain.extraction_report import Snapshot
+from otlp_replay.domain.period import Period
 
 
 class SpansStore(Protocol):
@@ -16,5 +16,5 @@ class SpansStore(Protocol):
         """Creates the destination if needed, otherwise checks its contract."""
 
     @abstractmethod
-    def hour_snapshot(self, hour: datetime) -> HourSnapshot:
-        """Latest version written for this hour; LookupError otherwise."""
+    def snapshot(self, period: Period) -> Snapshot:
+        """Latest version written for this period; LookupError otherwise."""

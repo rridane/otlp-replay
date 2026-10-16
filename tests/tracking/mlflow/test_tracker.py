@@ -1,14 +1,17 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import mlflow
 import pytest
 
 from otlp_replay.domain.extraction_report import ExtractionReport
+from otlp_replay.domain.period import Period
 from otlp_replay.tracking.mlflow.tracker import MlflowExtractionTracker
 
 H9 = datetime(2026, 10, 16, 9, tzinfo=UTC)
+PERIOD = Period(H9, H9 + timedelta(hours=3))
 REPORT = ExtractionReport(
-    hour=H9,
+    start=PERIOD.start,
+    end=PERIOD.end,
     objects=72,
     spans_written=236_000,
     snapshot_id=7757998124640709241,
@@ -32,13 +35,14 @@ def runs():
 
 
 def test_successful_extraction_is_recorded_with_lineage():
-    with tracker().track(H9) as record:
+    with tracker().track(PERIOD) as record:
         record(REPORT)
     (run,) = runs()
     assert run.info.status == "FINISHED"
-    assert run.info.run_name == "spans 2026-10-16T09"
+    assert run.info.run_name == "spans 2026-10-16T09:00/2026-10-16T12:00"
     assert run.data.params == {
-        "hour": "2026-10-16T09:00:00+00:00",
+        "start": "2026-10-16T09:00:00+00:00",
+        "end": "2026-10-16T12:00:00+00:00",
         "store": "otel.spans",
     }
     assert run.data.metrics == {
@@ -51,7 +55,7 @@ def test_successful_extraction_is_recorded_with_lineage():
 
 
 def test_failed_extraction_is_recorded_as_failed():
-    with pytest.raises(RuntimeError), tracker().track(H9):
+    with pytest.raises(RuntimeError), tracker().track(PERIOD):
         raise RuntimeError("Polaris injoignable")
     (run,) = runs()
     assert run.info.status == "FAILED"

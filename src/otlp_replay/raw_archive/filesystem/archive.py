@@ -1,6 +1,7 @@
-"""Objets OTLP bruts de l'exportateur awss3 : <racine>/year=…/hour=HH/minute=MM/*.binpb.gz
+"""Raw OTLP objects written by the collector awss3 exporter:
+<root>/year=YYYY/month=MM/day=DD/hour=HH/minute=MM/*.binpb.gz
 
-Tout FileSystem pyarrow convient : S3, GCS, Azure, disque local.
+Any pyarrow FileSystem works: S3, GCS, Azure, local disk.
 """
 
 import re

@@ -1,11 +1,10 @@
 """The Iceberg `spans` table in the catalog."""
 
-from datetime import datetime
-
 from pyiceberg import catalog, partitioning, schema, table
 from pyiceberg.table import sorting
 
-from otlp_replay.domain.extraction_report import HourSnapshot
+from otlp_replay.domain.extraction_report import Snapshot
+from otlp_replay.domain.period import Period
 from otlp_replay.spans_store.iceberg.schema import (
     NAMESPACE,
     SPANS_PARTITION_SPEC,
@@ -23,16 +22,20 @@ TABLE_PROPERTIES = {
 }
 
 
-HOUR_PROPERTY = "trace-transformer.hour"
+START_PROPERTY = "otlp-replay.start"
+END_PROPERTY = "otlp-replay.end"
 
 
 class SchemaDriftError(RuntimeError):
     pass
 
 
-def hour_properties(hour: datetime) -> dict[str, str]:
-    """Properties of the snapshot that replaces an hour."""
-    return {HOUR_PROPERTY: hour.isoformat()}
+def period_properties(period: Period) -> dict[str, str]:
+    """Properties of the snapshot that replaces a period."""
+    return {
+        START_PROPERTY: period.start.isoformat(),
+        END_PROPERTY: period.end.isoformat(),
+    }
 
 
 class SpansTable(SpansStore):
@@ -56,18 +59,20 @@ class SpansTable(SpansStore):
             properties=TABLE_PROPERTIES,
         )
 
-    def hour_snapshot(self, hour: datetime) -> HourSnapshot:
+    def snapshot(self, period: Period) -> Snapshot:
         loaded = self._lakehouse.load_table(self._identifier)
         for snapshot in reversed(loaded.snapshots()):
             properties = (
                 snapshot.summary.additional_properties if snapshot.summary else {}
             )
-            if properties.get(HOUR_PROPERTY) == hour.isoformat():
-                return HourSnapshot(
+            if all(
+                properties.get(k) == v for k, v in period_properties(period).items()
+            ):
+                return Snapshot(
                     snapshot_id=snapshot.snapshot_id,
                     added_records=int(properties.get("added-records", 0)),
                 )
-        raise LookupError(f"no snapshot for {hour.isoformat()}")
+        raise LookupError(f"no snapshot for {period}")
 
     @staticmethod
     def _check_contract(loaded: table.Table) -> None:

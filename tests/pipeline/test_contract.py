@@ -16,7 +16,7 @@ import pytest
 from otlp_factory import payload, span
 
 from otlp_replay.decoding.otlp.decoder import OtlpTraceDecoder
-from otlp_replay.domain.hour_window import HourWindow
+from otlp_replay.domain.period import Period
 from otlp_replay.domain.span_extractor import SpanExtractor
 from otlp_replay.pipeline.extraction_pipeline import ExtractionPipeline
 from otlp_replay.pipeline.memory.pipeline import (
@@ -30,6 +30,7 @@ from otlp_replay.spans_store.spans_store import SpansStore
 
 H9 = datetime(2026, 10, 16, 9, tzinfo=UTC)
 H10 = H9 + timedelta(hours=1)
+H11 = H9 + timedelta(hours=2)
 
 
 @dataclass
@@ -39,9 +40,8 @@ class World:
     deposit: Callable[[str, bytes], str]
     scan: Callable[[], pa.Table]
 
-    def run(self, objects: list[str], hour: datetime) -> None:
-        window = HourWindow.containing(hour)
-        self.pipeline.run(objects, SpanExtractor(OtlpTraceDecoder(), window), window)
+    def run(self, objects: list[str], period: Period) -> None:
+        self.pipeline.run(objects, SpanExtractor(OtlpTraceDecoder(), period), period)
 
     def span_ids(self) -> list[str]:
         return sorted(self.scan()["span_id"].to_pylist())
@@ -66,7 +66,7 @@ def ray(tmp_path):
     from otlp_replay.pipeline.ray.pipeline import (
         RayDataExtractionPipeline,
     )
-    from otlp_replay.pipeline.ray.sinks.iceberg import IcebergHourSink
+    from otlp_replay.pipeline.ray.sinks.iceberg import IcebergPeriodSink
     from otlp_replay.pipeline.ray.sources.gzip_binary_files import (
         GzipBinaryFiles,
     )
@@ -102,7 +102,7 @@ def ray(tmp_path):
 
     yield World(
         RayDataExtractionPipeline(
-            GzipBinaryFiles(fs), IcebergHourSink(catalog, store.name)
+            GzipBinaryFiles(fs), IcebergPeriodSink(catalog, store.name)
         ),
         store,
         deposit,
@@ -116,7 +116,7 @@ def world(request) -> World:
     return request.getfixturevalue(request.param)
 
 
-def test_writes_the_spans_of_the_hour(world):
+def test_writes_the_spans_of_the_period(world):
     objects = [
         world.deposit(
             "a",
@@ -125,22 +125,37 @@ def test_writes_the_spans_of_the_hour(world):
                 span("0000000000000002", H9),
             ),
         ),
-        world.deposit("b", payload(span("0000000000000003", H9.replace(minute=59)))),
+        world.deposit("b", payload(span("0000000000000003", H10.replace(minute=59)))),
     ]
-    world.run(objects, H9)
+    world.run(objects, Period(H9, H11))
     assert world.span_ids() == ["0000000000000002", "0000000000000003"]
-    assert world.store.hour_snapshot(H9).added_records == 2
+    assert world.store.snapshot(Period(H9, H11)).added_records == 2
 
 
-def test_rerun_replaces_the_hour_and_keeps_others(world):
+def test_rerun_replaces_the_period_and_keeps_others(world):
     objects = [
         world.deposit("a", payload(span("0000000000000002", H9))),
         world.deposit("b", payload(span("0000000000000010", H10))),
     ]
-    world.run(objects, H10)
-    world.run(objects, H9)
-    first = world.store.hour_snapshot(H9).snapshot_id
-    world.run(objects, H9)
+    world.run(objects, Period(H10, H11))
+    world.run(objects, Period(H9, H10))
+    first = world.store.snapshot(Period(H9, H10)).snapshot_id
+    world.run(objects, Period(H9, H10))
     assert world.span_ids() == ["0000000000000002", "0000000000000010"]
-    assert world.store.hour_snapshot(H9).snapshot_id != first
-    assert world.store.hour_snapshot(H10).added_records == 1
+    assert world.store.snapshot(Period(H9, H10)).snapshot_id != first
+    assert world.store.snapshot(Period(H10, H11)).added_records == 1
+
+
+def test_overlapping_period_only_replaces_its_own_spans(world):
+    objects = [
+        world.deposit("a", payload(span("0000000000000001", H9.replace(minute=10)))),
+        world.deposit("b", payload(span("0000000000000002", H9.replace(minute=50)))),
+        world.deposit("c", payload(span("0000000000000003", H10.replace(minute=50)))),
+    ]
+    world.run(objects[:2], Period(H9, H11))
+    world.run(objects[1:], Period(H9.replace(minute=30), H11))
+    assert world.span_ids() == [
+        "0000000000000001",
+        "0000000000000002",
+        "0000000000000003",
+    ]

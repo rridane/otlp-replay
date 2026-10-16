@@ -1,10 +1,11 @@
 """SpansStore contract, for every implementation."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pyiceberg.catalog.sql import SqlCatalog
 
+from otlp_replay.domain.period import Period
 from otlp_replay.spans_store.iceberg.schema import NAMESPACE
 from otlp_replay.spans_store.iceberg.spans_table import SpansTable
 from otlp_replay.spans_store.memory.spans_store import (
@@ -12,6 +13,7 @@ from otlp_replay.spans_store.memory.spans_store import (
 )
 
 H9 = datetime(2026, 10, 16, 9, tzinfo=UTC)
+PERIOD = Period(H9, H9 + timedelta(hours=1))
 
 
 @pytest.fixture
@@ -42,7 +44,7 @@ def test_ensure_is_idempotent(store):
     store.ensure()
 
 
-def test_hour_never_written_has_no_snapshot(store):
+def test_period_never_written_has_no_snapshot(store):
     store.ensure()
     with pytest.raises(LookupError):
-        store.hour_snapshot(H9)
+        store.snapshot(PERIOD)

@@ -5,11 +5,11 @@ from collections.abc import Sequence
 import pyarrow as pa
 
 from otlp_replay.domain.extractor import Extractor
-from otlp_replay.domain.hour_window import HourWindow
+from otlp_replay.domain.period import Period
 from otlp_replay.domain.raw_object import RawObject
 from otlp_replay.domain.span import SORT_KEYS
 from otlp_replay.pipeline.extraction_pipeline import ExtractionPipeline
-from otlp_replay.pipeline.ray.hour_sink import HourSink
+from otlp_replay.pipeline.ray.period_sink import PeriodSink
 from otlp_replay.pipeline.ray.raw_object_source import (
     PATH,
     PAYLOAD,
@@ -33,13 +33,11 @@ class _ExtractBatch:
 
 
 class RayDataExtractionPipeline(ExtractionPipeline):
-    def __init__(self, source: RawObjectSource, sink: HourSink) -> None:
+    def __init__(self, source: RawObjectSource, sink: PeriodSink) -> None:
         self._source = source
         self._sink = sink
 
-    def run(
-        self, objects: Sequence[str], extractor: Extractor, window: HourWindow
-    ) -> None:
+    def run(self, objects: Sequence[str], extractor: Extractor, period: Period) -> None:
         spans = (
             self._source.read(objects)
             .map_batches(
@@ -49,4 +47,4 @@ class RayDataExtractionPipeline(ExtractionPipeline):
             )
             .sort(SORT_KEYS)
         )
-        self._sink.replace(spans, window)
+        self._sink.replace(spans, period)

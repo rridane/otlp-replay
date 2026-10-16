@@ -4,8 +4,9 @@ from itertools import count
 import pytest
 from otlp_factory import payload, span
 
-from otlp_replay.application.extract_hour import ExtractHour
+from otlp_replay.application.extract import Extract
 from otlp_replay.decoding.otlp.decoder import OtlpTraceDecoder
+from otlp_replay.domain.period import Period
 from otlp_replay.pipeline.memory.pipeline import (
     InMemoryExtractionPipeline,
 )
@@ -18,6 +19,7 @@ from otlp_replay.tracking.memory.tracker import (
 )
 
 H9 = datetime(2026, 10, 16, 9, tzinfo=UTC)
+PERIOD = Period(H9, H9 + timedelta(hours=1))
 
 
 class SpyArchive(InMemoryRawArchive):
@@ -46,9 +48,9 @@ def tracker():
 
 
 @pytest.fixture
-def extract_hour(archive, store, tracker):
+def extract(archive, store, tracker):
     seconds = count(start=100, step=7)
-    return ExtractHour(
+    return Extract(
         archive,
         OtlpTraceDecoder(),
         InMemoryExtractionPipeline(archive, store),
@@ -58,7 +60,7 @@ def extract_hour(archive, store, tracker):
     )
 
 
-def test_reads_late_deposits_and_keeps_the_hour(archive, store, tracker, extract_hour):
+def test_reads_late_deposits_and_keeps_the_period(archive, store, tracker, extract):
     archive.deposit(
         H9.replace(minute=1),
         "a",
@@ -75,20 +77,21 @@ def test_reads_late_deposits_and_keeps_the_hour(archive, store, tracker, extract
     archive.deposit(
         H9 + timedelta(minutes=72), "c", payload(span("0000000000000004", H9))
     )
-    report = extract_hour(H9.replace(minute=30))
+    report = extract(PERIOD)
     assert archive.windows == [(H9, H9 + timedelta(hours=1, minutes=12))]
     assert sorted(store.scan()["span_id"].to_pylist()) == [
         "0000000000000002",
         "0000000000000003",
     ]
-    assert (report.hour, report.objects, report.spans_written) == (H9, 2, 2)
-    assert report.snapshot_id == store.hour_snapshot(H9).snapshot_id
+    assert (report.start, report.end) == (PERIOD.start, PERIOD.end)
+    assert (report.objects, report.spans_written) == (2, 2)
+    assert report.snapshot_id == store.snapshot(PERIOD).snapshot_id
     assert report.duration_s == 7.0
     assert tracker.reports == [report]
 
 
-def test_hour_without_raw_objects_fails_and_is_tracked(tracker, extract_hour):
+def test_period_without_raw_objects_fails_and_is_tracked(tracker, extract):
     with pytest.raises(FileNotFoundError):
-        extract_hour(H9)
-    assert [hour for hour, _ in tracker.failures] == [H9]
+        extract(PERIOD)
+    assert [period for period, _ in tracker.failures] == [PERIOD]
     assert tracker.reports == []

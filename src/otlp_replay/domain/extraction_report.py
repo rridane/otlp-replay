@@ -3,8 +3,8 @@ from datetime import datetime
 
 
 @dataclass(frozen=True)
-class HourSnapshot:
-    """Table version written for an hour."""
+class Snapshot:
+    """Table version written for a period."""
 
     snapshot_id: int
     added_records: int
@@ -12,7 +12,8 @@ class HourSnapshot:
 
 @dataclass(frozen=True)
 class ExtractionReport:
-    hour: datetime
+    start: datetime
+    end: datetime
     objects: int
     spans_written: int
     snapshot_id: int
