@@ -1,0 +1,95 @@
+[project]
+name = "otlp-replay"
+version = "0.1.0"
+description = "Replay raw OpenTelemetry trace archives into an Apache Iceberg table."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = ["opentelemetry-proto>=1.30", "pyarrow>=18", "pyyaml>=6"]
+
+[project.optional-dependencies]
+iceberg = ["pyiceberg[pyarrow,pyiceberg-core]>=0.10"]
+ray = ["ray[data]>=2.58"]
+mlflow = ["mlflow-skinny>=3.16"]
+
+[project.scripts]
+otlp-replay = "otlp_replay.cli:main"
+
+[dependency-groups]
+dev = [
+    "alembic",
+    "import-linter==2.15",
+    "pyiceberg[sql-sqlite]",
+    "pyright==1.1.414",
+    "pytest",
+    "ruff",
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv]
+exclude-newer = "2026-09-29T00:00:00Z"
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+pythonpath = ["tests/support"]
+markers = ["ray: runs only inside a Ray job (RAY_ADDRESS set)"]
+
+[tool.importlinter]
+root_package = "otlp_replay"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Core and interfaces never import implementations"
+type = "forbidden"
+source_modules = [
+    "otlp_replay.domain",
+    "otlp_replay.application",
+    "otlp_replay.raw_archive.raw_trace_archive",
+    "otlp_replay.decoding.trace_decoder",
+    "otlp_replay.spans_store.spans_store",
+    "otlp_replay.pipeline.extraction_pipeline",
+    "otlp_replay.tracking.extraction_tracker",
+]
+forbidden_modules = [
+    "otlp_replay.raw_archive.filesystem",
+    "otlp_replay.raw_archive.memory",
+    "otlp_replay.decoding.otlp",
+    "otlp_replay.spans_store.iceberg",
+    "otlp_replay.spans_store.memory",
+    "otlp_replay.pipeline.memory",
+    "otlp_replay.pipeline.ray",
+    "otlp_replay.tracking.mlflow",
+    "otlp_replay.tracking.memory",
+    "mlflow",
+    "pyiceberg",
+    "ray",
+]
+
+[[tool.importlinter.contracts]]
+name = "Implementations are independent"
+type = "independence"
+modules = [
+    "otlp_replay.raw_archive.filesystem",
+    "otlp_replay.raw_archive.memory",
+    "otlp_replay.decoding.otlp",
+    "otlp_replay.spans_store.iceberg",
+    "otlp_replay.spans_store.memory",
+    "otlp_replay.pipeline.memory",
+    "otlp_replay.pipeline.ray",
+    "otlp_replay.tracking.mlflow",
+    "otlp_replay.tracking.memory",
+]
+ignore_imports = [
+    "otlp_replay.pipeline.ray.sinks.iceberg -> otlp_replay.spans_store.iceberg.spans_table",
+]
+
+[tool.pyright]
+include = ["src", "tests"]
+extraPaths = ["tests/support"]
+venvPath = "."
+venv = ".venv"
