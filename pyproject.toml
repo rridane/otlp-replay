@@ -65,6 +65,7 @@ forbidden_modules = [
     "otlp_replay.pipeline.ray",
     "otlp_replay.tracking.mlflow",
     "otlp_replay.tracking.memory",
+    "otlp_replay.tracking.log",
     "mlflow",
     "pyiceberg",
     "ray",
@@ -84,6 +85,7 @@ modules = [
     "otlp_replay.pipeline.ray",
     "otlp_replay.tracking.mlflow",
     "otlp_replay.tracking.memory",
+    "otlp_replay.tracking.log",
 ]
 ignore_imports = [
     "otlp_replay.pipeline.ray.sinks.iceberg -> otlp_replay.spans_store.iceberg.spans_table",

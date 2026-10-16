@@ -1,6 +1,6 @@
 """One MLflow run per extracted period: metrics and lineage to the written version."""
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 
 import mlflow
@@ -17,11 +17,11 @@ class MlflowExtractionTracker(ExtractionTracker):
         self,
         store: str,
         experiment: str = EXPERIMENT,
-        git_commit: str | None = None,
+        tags: Mapping[str, str] | None = None,
     ) -> None:
         self._store = store
         self._experiment = experiment
-        self._git_commit = git_commit
+        self._tags = dict(tags or {})
 
     @contextmanager
     def track(self, period: Period) -> Iterator[Callable[[ExtractionReport], None]]:
@@ -35,8 +35,7 @@ class MlflowExtractionTracker(ExtractionTracker):
                     "store": self._store,
                 }
             )
-            if self._git_commit:
-                mlflow.set_tag("git.commit", self._git_commit)
+            mlflow.set_tags(self._tags)
             yield self._record
 
     @staticmethod

@@ -25,7 +25,7 @@ def local_tracking(tmp_path, monkeypatch):
 
 
 def tracker():
-    return MlflowExtractionTracker("otel.spans", git_commit="abc1234")
+    return MlflowExtractionTracker("otel.spans", tags={"git.commit": "abc1234"})
 
 
 def runs():
