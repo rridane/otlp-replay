@@ -10,4 +10,4 @@ from otlp_replay.domain.raw_object import RawObject
 class Extractor(Protocol):
     @abstractmethod
     def extract(self, objects: Iterable[RawObject]) -> pa.Table:
-        """Raw objects to selected spans, following SPAN_SCHEMA."""
+        """Raw objects to the selected spans, following the decoder schema."""

@@ -4,18 +4,16 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue, KeyValue
 from opentelemetry.proto.trace.v1.trace_pb2 import Span, Status
 
+from otlp_replay.config import load_columns
 from otlp_replay.decoding.otlp.decoder import (
     OtlpTraceDecoder,
 )
-from otlp_replay.domain.semantic_conventions import (
-    Rule,
-    SemanticConventions,
-)
-from otlp_replay.domain.span import SPAN_SCHEMA
+from otlp_replay.domain.columns import Column, ColumnType, Source
 
 TRACE_ID = bytes.fromhex("0af7651916cd43dd8448eb211c80319c")
 START = 1_760_605_200_123_456_789
 RAW_OBJECT = "minute=00/x.binpb.gz"
+DECODER = OtlpTraceDecoder(load_columns())
 
 
 def kv(key, value):
@@ -47,14 +45,16 @@ def payload(*batches):
 
 
 def convert(*batches, converter=None):
-    return (converter or OtlpTraceDecoder()).decode(payload(*batches), RAW_OBJECT)
+    return (converter or DECODER).decode(payload(*batches), RAW_OBJECT)
 
 
 CART = [kv("service.name", "cart"), kv("k8s.pod.name", "cart-0")]
 
 
-def test_output_matches_iceberg_schema():
-    assert convert((CART, "otelgrpc", [span("00f067aa0ba902b7")])).schema == SPAN_SCHEMA
+def test_output_follows_the_decoder_schema():
+    assert (
+        convert((CART, "otelgrpc", [span("00f067aa0ba902b7")])).schema == DECODER.schema
+    )
 
 
 def test_flattens_resources_scopes_and_spans():
@@ -109,14 +109,21 @@ def test_attributes_are_kept_and_normalized():
     }
 
 
-def test_conventions_are_injected():
-    conventions = SemanticConventions([Rule("http_method", ("custom.verb",))])
-    s = span("00f067aa0ba902b7", attributes=[kv("custom.verb", "PUT")])
+def test_only_the_configured_columns_are_promoted():
+    columns = [
+        Column("verb", (Source("custom.verb"),)),
+        Column("pod", (Source("k8s.pod.name", resource=True),)),
+        Column("retries", (Source("retry.count"),), ColumnType.INT),
+    ]
+    s = span(
+        "00f067aa0ba902b7",
+        attributes=[kv("custom.verb", "PUT"), kv("retry.count", "3")],
+    )
     (row,) = convert(
-        (CART, "otelgrpc", [s]), converter=OtlpTraceDecoder(conventions)
+        (CART, "otelgrpc", [s]), converter=OtlpTraceDecoder(columns)
     ).to_pylist()
-    assert row["http_method"] == "PUT"
-    assert row["db_statement"] is None
+    assert (row["verb"], row["pod"], row["retries"]) == ("PUT", "cart-0", 3)
+    assert "http_method" not in row
 
 
 def test_events_and_links():

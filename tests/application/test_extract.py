@@ -5,6 +5,7 @@ import pytest
 from otlp_factory import payload, span
 
 from otlp_replay.application.extract import Extract
+from otlp_replay.config import load_columns
 from otlp_replay.decoding.otlp.decoder import OtlpTraceDecoder
 from otlp_replay.domain.period import Period
 from otlp_replay.pipeline.memory.pipeline import (
@@ -19,6 +20,7 @@ from otlp_replay.tracking.memory.tracker import (
 )
 
 H9 = datetime(2026, 10, 16, 9, tzinfo=UTC)
+DECODER = OtlpTraceDecoder(load_columns())
 PERIOD = Period(H9, H9 + timedelta(hours=1))
 
 
@@ -39,7 +41,7 @@ def archive():
 
 @pytest.fixture
 def store():
-    return InMemorySpansStore()
+    return InMemorySpansStore(DECODER.schema)
 
 
 @pytest.fixture
@@ -52,7 +54,7 @@ def extract(archive, store, tracker):
     seconds = count(start=100, step=7)
     return Extract(
         archive,
-        OtlpTraceDecoder(),
+        DECODER,
         InMemoryExtractionPipeline(archive, store),
         store,
         tracker,

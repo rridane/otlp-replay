@@ -68,6 +68,7 @@ forbidden_modules = [
     "mlflow",
     "pyiceberg",
     "ray",
+    "yaml",
 ]
 
 [[tool.importlinter.contracts]]

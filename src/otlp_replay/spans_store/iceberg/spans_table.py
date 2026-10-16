@@ -1,16 +1,20 @@
 """The Iceberg `spans` table in the catalog."""
 
-from pyiceberg import catalog, partitioning, schema, table
+from collections.abc import Sequence
+
+from pyiceberg import catalog, partitioning, schema, table, types
 from pyiceberg.table import sorting
 
+from otlp_replay.domain.columns import Column
 from otlp_replay.domain.extraction_report import Snapshot
 from otlp_replay.domain.period import Period
+from otlp_replay.domain.span import CORE_COLUMNS
 from otlp_replay.spans_store.iceberg.schema import (
     NAMESPACE,
-    SPANS_PARTITION_SPEC,
-    SPANS_SCHEMA,
-    SPANS_SORT_ORDER,
     TABLE,
+    spans_partition_spec,
+    spans_schema,
+    spans_sort_order,
 )
 from otlp_replay.spans_store.spans_store import SpansStore
 
@@ -39,23 +43,31 @@ def period_properties(period: Period) -> dict[str, str]:
 
 
 class SpansTable(SpansStore):
-    def __init__(self, lakehouse: catalog.Catalog, namespace: str = NAMESPACE) -> None:
+    def __init__(
+        self,
+        lakehouse: catalog.Catalog,
+        columns: Sequence[Column],
+        namespace: str = NAMESPACE,
+    ) -> None:
         self._lakehouse = lakehouse
         self._identifier = (namespace, TABLE)
+        self._schema = spans_schema(columns)
 
     @property
     def name(self) -> str:
         return ".".join(self._identifier)
 
     def ensure(self) -> None:
-        self._check_contract(self.create_or_load())
+        loaded = self.create_or_load()
+        self._evolve(loaded)
+        self._check_layout(loaded)
 
     def create_or_load(self) -> table.Table:
         return self._lakehouse.create_table_if_not_exists(
             self._identifier,
-            schema=SPANS_SCHEMA,
-            partition_spec=SPANS_PARTITION_SPEC,
-            sort_order=SPANS_SORT_ORDER,
+            schema=self._schema,
+            partition_spec=spans_partition_spec(self._schema),
+            sort_order=spans_sort_order(self._schema),
             properties=TABLE_PROPERTIES,
         )
 
@@ -74,25 +86,48 @@ class SpansTable(SpansStore):
                 )
         raise LookupError(f"no snapshot for {period}")
 
-    @staticmethod
-    def _check_contract(loaded: table.Table) -> None:
+    def _evolve(self, loaded: table.Table) -> None:
+        """Adds the configured columns the table lacks; refuses any other change."""
+        expected = {f.name: f for f in self._schema.fields}
+        current = {f.name: f for f in loaded.schema().fields}
+        removed = sorted(current.keys() - expected.keys())
+        if removed:
+            raise SchemaDriftError(
+                f"columns {removed} are in the table but not in the configuration:"
+                " removing columns is refused"
+            )
+        changed = sorted(
+            name
+            for name in current.keys() & expected.keys()
+            if _shape(current[name]) != _shape(expected[name])
+        )
+        if changed:
+            raise SchemaDriftError(f"columns {changed} changed type: refused")
+        added = [f for name, f in expected.items() if name not in current]
+        missing_core = sorted(f.name for f in added if f.name in CORE_COLUMNS)
+        if missing_core:
+            raise SchemaDriftError(f"core columns {missing_core} are missing")
+        if added:
+            with loaded.update_schema() as update:
+                for field in added:
+                    update.add_column(field.name, field.field_type)
+
+    def _check_layout(self, loaded: table.Table) -> None:
         current = loaded.schema()
-        if _structure(current) != _structure(SPANS_SCHEMA):
-            raise SchemaDriftError("schema differs from SPANS_SCHEMA")
         if _partitioning(current, loaded.spec()) != _partitioning(
-            SPANS_SCHEMA, SPANS_PARTITION_SPEC
+            self._schema, spans_partition_spec(self._schema)
         ):
-            raise SchemaDriftError("partitioning differs from SPANS_PARTITION_SPEC")
+            raise SchemaDriftError("partitioning differs from the expected layout")
         if _sorting(current, loaded.sort_order()) != _sorting(
-            SPANS_SCHEMA, SPANS_SORT_ORDER
+            self._schema, spans_sort_order(self._schema)
         ):
-            raise SchemaDriftError("sort order differs from SPANS_SORT_ORDER")
+            raise SchemaDriftError("sort order differs from the expected layout")
 
 
 # The catalog renumbers fields on creation: compare names, types and
 # nullability, not field ids.
-def _structure(of: schema.Schema) -> schema.Schema:
-    return schema.assign_fresh_schema_ids(of)
+def _shape(field: types.NestedField) -> schema.Schema:
+    return schema.assign_fresh_schema_ids(schema.Schema(field))
 
 
 def _partitioning(

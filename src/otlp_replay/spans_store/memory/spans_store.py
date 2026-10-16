@@ -5,7 +5,6 @@ import pyarrow.compute as pc
 
 from otlp_replay.domain.extraction_report import Snapshot
 from otlp_replay.domain.period import Period
-from otlp_replay.domain.span import SPAN_SCHEMA
 from otlp_replay.spans_store.spans_store import SpansStore
 
 
@@ -13,9 +12,9 @@ class InMemorySpansStore(SpansStore):
     """Same semantics as the Iceberg table: replacing a period overwrites the
     spans that started in it, whatever was written before."""
 
-    def __init__(self, name: str = "memory.spans") -> None:
+    def __init__(self, schema: pa.Schema, name: str = "memory.spans") -> None:
         self._name = name
-        self._spans = SPAN_SCHEMA.empty_table()
+        self._spans = schema.empty_table()
         self._snapshots: dict[Period, Snapshot] = {}
         self._ids = count(1)
 

@@ -1,6 +1,6 @@
-"""OTLP request (ExportTraceServiceRequest) to spans following SPAN_SCHEMA."""
+"""OTLP request (ExportTraceServiceRequest) to one row per span."""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 
 import pyarrow as pa
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
@@ -9,20 +9,11 @@ from opentelemetry.proto.trace.v1 import trace_pb2
 
 from otlp_replay.decoding.otlp.values import to_pairs
 from otlp_replay.decoding.trace_decoder import TraceDecoder
-from otlp_replay.domain.semantic_conventions import SemanticConventions
-from otlp_replay.domain.span import SPAN_SCHEMA
+from otlp_replay.domain.columns import Column
+from otlp_replay.domain.span import span_schema
 
 # Value mandated by the OTLP specification when service.name is missing.
 UNKNOWN_SERVICE = "unknown_service"
-
-RESOURCE_COLUMNS = {
-    "service_version": "service.version",
-    "service_instance_id": "service.instance.id",
-    "k8s_namespace": "k8s.namespace.name",
-    "k8s_deployment": "k8s.deployment.name",
-    "k8s_pod": "k8s.pod.name",
-    "k8s_node": "k8s.node.name",
-}
 
 KIND = {
     k: trace_pb2.Span.SpanKind.Name(k).removeprefix("SPAN_KIND_")
@@ -37,13 +28,18 @@ STATUS = {
 class OtlpTraceDecoder(TraceDecoder):
     """Flattens resource, scope and span into one row per span."""
 
-    def __init__(self, conventions: SemanticConventions | None = None) -> None:
-        self._conventions = conventions or SemanticConventions()
+    def __init__(self, columns: Sequence[Column]) -> None:
+        self._columns = tuple(columns)
+        self._schema = span_schema(self._columns)
+
+    @property
+    def schema(self) -> pa.Schema:
+        return self._schema
 
     def decode(self, payload: bytes, source: str) -> pa.Table:
         request = trace_service_pb2.ExportTraceServiceRequest.FromString(payload)
         return pa.Table.from_pylist(
-            list(self._rows(request, source)), schema=SPAN_SCHEMA
+            list(self._rows(request, source)), schema=self._schema
         )
 
     def _rows(
@@ -76,16 +72,20 @@ class OtlpTraceDecoder(TraceDecoder):
             "start_time": span.start_time_unix_nano // 1_000,
             "duration_ns": span.end_time_unix_nano - span.start_time_unix_nano,
             "service": resource.get("service.name") or UNKNOWN_SERVICE,
-            **{column: resource.get(key) for column, key in RESOURCE_COLUMNS.items()},
             "scope_name": scope.name or None,
             "scope_version": scope.version or None,
-            **self._conventions.normalize(dict(attributes)),
+            **self._promoted(dict(attributes), resource),
             "attributes": attributes,
             "resource_attributes": list(resource.items()),
             "events": self._events(span),
             "links": self._links(span),
             "raw_object": raw_object,
         }
+
+    def _promoted(
+        self, attributes: Mapping[str, str | None], resource: Mapping[str, str | None]
+    ) -> dict[str, object]:
+        return {c.name: c.value(attributes, resource) for c in self._columns}
 
     @staticmethod
     def _events(span: trace_pb2.Span) -> list[dict]:

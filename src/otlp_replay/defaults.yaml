@@ -1,0 +1,24 @@
+# Promoted columns: the first attribute present wins.
+# "resource:" reads a resource attribute instead of a span attribute.
+columns:
+  service_version: [resource:service.version]
+  service_instance_id: [resource:service.instance.id]
+  k8s_namespace: [resource:k8s.namespace.name]
+  k8s_deployment: [resource:k8s.deployment.name]
+  k8s_pod: [resource:k8s.pod.name]
+  k8s_node: [resource:k8s.node.name]
+  http_method: [http.request.method, http.method]
+  http_route: [http.route]
+  http_status_code: {from: [http.response.status_code, http.status_code], type: int}
+  rpc_system: [rpc.system.name, rpc.system]
+  rpc_service: [rpc.service]
+  rpc_method: [rpc.method]
+  rpc_status_code:
+    from: [rpc.response.status_code, rpc.grpc.status_code, grpc.status_code]
+    type: grpc_status
+  db_system: [db.system.name, db.system]
+  db_statement: [db.query.text, db.statement]
+  server_address: [server.address]
+  peer_service: [peer.service]
+  messaging_system: [messaging.system]
+  messaging_destination: [messaging.destination.name]

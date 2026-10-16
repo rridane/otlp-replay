@@ -8,7 +8,6 @@ from otlp_replay.decoding.trace_decoder import TraceDecoder
 from otlp_replay.domain.extractor import Extractor
 from otlp_replay.domain.period import Period
 from otlp_replay.domain.raw_object import RawObject
-from otlp_replay.domain.span import SPAN_SCHEMA
 
 
 class SpanExtractor(Extractor):
@@ -18,7 +17,7 @@ class SpanExtractor(Extractor):
 
     def extract(self, objects: Iterable[RawObject]) -> pa.Table:
         spans = pa.concat_tables(
-            [SPAN_SCHEMA.empty_table()]
+            [self._decoder.schema.empty_table()]
             + [self._decoder.decode(o.payload, o.path) for o in objects]
         )
         return self._period.select(spans)

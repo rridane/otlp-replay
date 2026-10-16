@@ -15,6 +15,7 @@ import pyarrow as pa
 import pytest
 from otlp_factory import payload, span
 
+from otlp_replay.config import load_columns
 from otlp_replay.decoding.otlp.decoder import OtlpTraceDecoder
 from otlp_replay.domain.period import Period
 from otlp_replay.domain.span_extractor import SpanExtractor
@@ -29,6 +30,8 @@ from otlp_replay.spans_store.memory.spans_store import (
 from otlp_replay.spans_store.spans_store import SpansStore
 
 H9 = datetime(2026, 10, 16, 9, tzinfo=UTC)
+COLUMNS = load_columns()
+DECODER = OtlpTraceDecoder(COLUMNS)
 H10 = H9 + timedelta(hours=1)
 H11 = H9 + timedelta(hours=2)
 
@@ -41,7 +44,7 @@ class World:
     scan: Callable[[], pa.Table]
 
     def run(self, objects: list[str], period: Period) -> None:
-        self.pipeline.run(objects, SpanExtractor(OtlpTraceDecoder(), period), period)
+        self.pipeline.run(objects, SpanExtractor(DECODER, period), period)
 
     def span_ids(self) -> list[str]:
         return sorted(self.scan()["span_id"].to_pylist())
@@ -49,7 +52,7 @@ class World:
 
 @pytest.fixture
 def memory():
-    archive, store = InMemoryRawArchive(), InMemorySpansStore()
+    archive, store = InMemoryRawArchive(), InMemorySpansStore(DECODER.schema)
     return World(
         InMemoryExtractionPipeline(archive, store),
         store,
@@ -91,7 +94,7 @@ def ray(tmp_path):
         **s3,
     )
     catalog.create_namespace(NAMESPACE)
-    store = SpansTable(catalog)
+    store = SpansTable(catalog, COLUMNS)
     store.ensure()
 
     def deposit(name: str, content: bytes) -> str:
