@@ -8,8 +8,6 @@ from pyiceberg.table import sorting
 
 from otlp_replay.domain.columns import Column, ColumnType
 
-# Catalog configured through the PYICEBERG_CATALOG__LAKEHOUSE__* variables.
-CATALOG = "lakehouse"
 NAMESPACE = "otel"
 TABLE = "spans"
 

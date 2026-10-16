@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 import pyarrow as pa
 import pyarrow.compute as pc
 
-# A span is exported after it ends: longest observed span (flagd gRPC stream,
-# 600 s) + export delay (67 s) + margin.
+# A span is exported after it ends: the margin covers long streaming spans
+# plus the exporter delay.
 LATENESS = timedelta(minutes=12)
 
 

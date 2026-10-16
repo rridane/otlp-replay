@@ -27,7 +27,7 @@ def test_every_option_is_read():
             *REQUIRED,
             "--archive", "file:///data/traces",
             "--catalog", "lakehouse",
-            "--namespace", "trace_transformer",
+            "--namespace", "tracing",
             "--columns", "columns.yaml",
             "--lateness", "5",
             "--tracking", "mlflow",
@@ -36,7 +36,7 @@ def test_every_option_is_read():
         ]
     )  # fmt: skip
     assert request.period.lateness == timedelta(minutes=5)
-    assert (request.catalog, request.namespace) == ("lakehouse", "trace_transformer")
+    assert (request.catalog, request.namespace) == ("lakehouse", "tracing")
     assert request.columns == Path("columns.yaml")
     assert request.tags == {"git.commit": "abc1234", "dag": "spans_hourly"}
 
