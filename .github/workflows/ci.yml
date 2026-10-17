@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  RR_CI_VERSION: v0.1.0
+  PIPELINE: otlp-replay-ci
   PIPEYARD_PROJECT: ${{ github.repository }}
   PIPEYARD_BRANCH: ${{ github.ref_name }}
   PIPEYARD_COMMIT_SHA: ${{ github.sha }}
@@ -29,28 +29,38 @@ jobs:
       # The whole history, which the secrets stage scans.
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
-      - name: Fetch rr-ci
+      # The latest release of this repository's pipeline, run only once it is
+      # proven to come from the builder's workflow on main.
+      - name: Fetch the pipeline
         run: |
-          gh release download "$RR_CI_VERSION" --repo rridane/rr-ci --pattern rr-ci --dir bin
-          gh attestation verify bin/rr-ci --repo rridane/rr-ci
-          chmod +x bin/rr-ci
+          tag=$(gh release list --repo rridane/rridane-pipeyard-builder --exclude-drafts --exclude-pre-releases \
+            --limit 100 --json tagName --jq "[.[].tagName | select(startswith(\"$PIPELINE/v\"))][0] // empty")
+          test -n "$tag" || { echo "no release of $PIPELINE"; exit 1; }
+          echo "pipeline $tag"
+          gh release download "$tag" --repo rridane/rridane-pipeyard-builder --pattern "$PIPELINE" --dir bin
+          gh attestation verify "bin/$PIPELINE" --repo rridane/rridane-pipeyard-builder \
+            --signer-workflow rridane/rridane-pipeyard-builder/.github/workflows/builder.yml \
+            --source-ref refs/heads/main
+          chmod +x "bin/$PIPELINE"
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Start BuildKit
         run: |
-          docker run -d --name buildkit --privileged -p 1234:1234 moby/buildkit:v0.34.0 --addr tcp://0.0.0.0:1234
+          docker run -d --name buildkit --privileged -p 127.0.0.1:1234:1234 moby/buildkit:v0.34.0 --addr tcp://0.0.0.0:1234
           timeout 60 sh -c 'until docker logs buildkit 2>&1 | grep -q "running server"; do sleep 1; done'
 
-      - run: bin/rr-ci guard
+      - run: bin/otlp-replay-ci guard
         env:
-          RR_CI_DENYLIST: ${{ secrets.RR_CI_DENYLIST }}
-      - run: bin/rr-ci secrets
-      - run: bin/rr-ci lint
-      - run: bin/rr-ci typecheck
-      - run: bin/rr-ci architecture
-      - run: bin/rr-ci test
-      - run: bin/rr-ci lock-check
-      - run: bin/rr-ci audit
+          PIPEYARD_DENYLIST: ${{ secrets.PIPEYARD_DENYLIST }}
+      - run: bin/otlp-replay-ci secrets
+      - run: bin/otlp-replay-ci workflows
+      - run: bin/otlp-replay-ci lint
+      - run: bin/otlp-replay-ci typecheck
+      - run: bin/otlp-replay-ci architecture
+      - run: bin/otlp-replay-ci test
+      - run: bin/otlp-replay-ci lock-check
+      - run: bin/otlp-replay-ci audit
