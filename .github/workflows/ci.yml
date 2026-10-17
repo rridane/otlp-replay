@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RR_CI_VERSION: v0.1.0
+  PIPEYARD_PROJECT: ${{ github.repository }}
+  PIPEYARD_BRANCH: ${{ github.ref_name }}
+  PIPEYARD_COMMIT_SHA: ${{ github.sha }}
+  PIPEYARD_COMMIT_TIME: ${{ github.event.head_commit.timestamp }}
+  PIPEYARD_COMMIT_TITLE: ${{ github.event.head_commit.message }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      # The whole history, which the secrets stage scans.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch rr-ci
+        run: |
+          gh release download "$RR_CI_VERSION" --repo rridane/rr-ci --pattern rr-ci --dir bin
+          gh attestation verify bin/rr-ci --repo rridane/rr-ci
+          chmod +x bin/rr-ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Start BuildKit
+        run: |
+          docker run -d --name buildkit --privileged -p 1234:1234 moby/buildkit:v0.34.0 --addr tcp://0.0.0.0:1234
+          timeout 60 sh -c 'until docker logs buildkit 2>&1 | grep -q "running server"; do sleep 1; done'
+
+      - run: bin/rr-ci guard
+        env:
+          RR_CI_DENYLIST: ${{ secrets.RR_CI_DENYLIST }}
+      - run: bin/rr-ci secrets
+      - run: bin/rr-ci lint
+      - run: bin/rr-ci typecheck
+      - run: bin/rr-ci architecture
+      - run: bin/rr-ci test
+      - run: bin/rr-ci lock-check
+      - run: bin/rr-ci audit
